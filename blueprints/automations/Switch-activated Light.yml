@@ -1,0 +1,88 @@
+blueprint:
+  name: Switch-activated Light
+  description: Turns on a light when switch press is detected and changes the scene on multiple presses
+  domain: automation
+  input:
+    entity_switch:
+      name: Switch
+      selector:
+        entity:
+          filter:
+            domain: binary_sensor
+    target_light:
+      name: Light
+      selector:
+        target:
+          entity:
+            domain: light
+
+variables:
+  lights: !input target_light
+  brightness_pct: >-
+    {% if now().strftime('%H') > "05" and now().strftime('%H') < "23" %}
+      100
+    {%- else -%}
+      50
+    {%- endif -%}
+  entity: >-
+    {% if lights.entity_id is defined %}
+      {{ lights.entity_id }}
+    {% elif lights.device_id is defined %}
+      {{ device_entities(lights.device_id | first) | first }}
+    {%- endif -%}
+  entities: >-
+    {% if lights.entity_id is defined %}
+      {{ [device_id(lights.entity_id)] }}
+    {% elif lights.device_id is defined %}
+      {{ lights.device_id }}
+    {%- endif -%}
+
+trigger:
+  - platform: state
+    entity_id: !input entity_switch
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+
+action:
+  - choose:
+      - conditions:
+          - "{{ (trigger.to_state.state == 'on') }}"
+          - "{{ is_state(entity, 'off') }}"
+        sequence:
+          - service: light.turn_on
+            target: !input target_light
+            data:
+              color_temp: 330
+              brightness_pct: "{{ brightness_pct }}"
+      - conditions:
+          - "{{ (trigger.to_state.state == 'on') }}"
+          - "{{ is_state(entity, 'on') }}"
+          - "{{ is_state_attr(entity, 'color_temp', 330) }}"
+        sequence:
+          - service: light.turn_on
+            target: !input target_light
+            data:
+              color_temp: 153
+              brightness_pct: "{{ brightness_pct }}"
+      - conditions:
+          - "{{ (trigger.to_state.state == 'on') }}"
+        sequence:
+          - repeat:
+              for_each: '{{ entities }}'
+              sequence:
+                - service: light.turn_on
+                  data:
+                    rgb_color:
+                      - "{{ range(1, 255) | random }}"
+                      - "{{ range(1, 255) | random }}"
+                      - "{{ range(1, 255) | random }}"
+                    brightness_pct: "{{ brightness_pct }}"
+                  target:
+                    device_id: "{{ repeat.item }}"
+      - conditions:
+          - "{{ (trigger.to_state.state == 'off') }}"
+        sequence:
+          - service: light.turn_off
+            target: !input target_light
